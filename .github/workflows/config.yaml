@@ -39,6 +39,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+        
       - name: Set environment variables
         id: vars
         run: |
@@ -59,14 +60,7 @@ jobs:
           
           # Full image URIs
           echo "image_uri_version=$ECR_URI:$ENV_TAG" >> $GITHUB_OUTPUT
-          
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ inputs.aws_region }}
 
       - name: Login to Amazon ECR
         id: ecr-login
