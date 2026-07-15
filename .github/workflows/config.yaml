@@ -25,7 +25,11 @@ on:
         required: false
         default: '.'
         type: string
-
+    secrets:
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
 jobs:
   deploy:
     name: Deploy to Agencore
