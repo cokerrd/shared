@@ -1,0 +1,141 @@
+name: agentcore ci test
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to deploy (dev, staging, production)'
+        required: true
+        type: string
+      ecr_repository_uri:
+        description: 'Full ECR repository URI'
+        required: true
+        type: string
+      agent_runtime_id:
+        description: 'Agencore Agent Runtime ID'
+        required: true
+        type: string
+      aws_region:
+        description: 'AWS Region'
+        required: false
+        default: 'us-west-2'
+        type: string
+      dockerfile_path:
+        description: 'Path to Dockerfile'
+        required: false
+        default: '.'
+        type: string
+
+jobs:
+  deploy:
+    name: Deploy to Agencore
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set environment variables
+        id: vars
+        run: |
+          # Generate timestamp-based tag
+          TIMESTAMP=$(date +"%m%d%Y_%H%M")
+          ENV_TAG="${{ inputs.environment }}-${TIMESTAMP}"
+          
+          # Parse ECR URI
+          ECR_URI="${{ inputs.ecr_repository_uri }}"
+          ECR_REGISTRY=$(echo "$ECR_URI" | cut -d'/' -f1)
+          ECR_REPO=$(echo "$ECR_URI" | cut -d'/' -f2-)
+          
+          echo "environment=${{ inputs.environment }}" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "env_tag=$ENV_TAG" >> $GITHUB_OUTPUT
+          echo "ecr_registry=$ECR_REGISTRY" >> $GITHUB_OUTPUT
+          echo "ecr_repo=$ECR_REPO" >> $GITHUB_OUTPUT
+          
+          # Full image URIs
+          echo "image_uri_version=$ECR_URI:$ENV_TAG" >> $GITHUB_OUTPUT
+          
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        run: |
+          aws ecr get-login-password --region ${{ inputs.aws_region }} | \
+            docker login --username AWS --password-stdin ${{ steps.vars.outputs.ecr_registry }}
+          echo "Logged in to ECR successfully"
+
+      - name: Build Docker image
+        id: build
+        run: |
+          echo "Building Docker image with tags:"
+          echo "  - ${{ steps.vars.outputs.image_uri_version }}"
+        
+          docker build \
+            -t ${{ steps.vars.outputs.image_uri_version }} \
+            -f ${{ inputs.dockerfile_path }}/Dockerfile \
+            ${{ inputs.dockerfile_path }}
+          
+          echo "Image built successfully"
+
+      - name: Push Docker image to ECR
+        id: push
+        run: |
+          echo "Pushing version tag: ${{ steps.vars.outputs.env_tag }}"
+          docker push ${{ steps.vars.outputs.image_uri_version }}        
+          echo "Images pushed successfully"
+
+      - name: Update Agencore Runtime with new image
+        id: update-runtime
+        run: |
+          echo "Updating Agencore Runtime with new image..."
+          
+          NEW_VERSION=$(aws bedrock-agentcore-control update-agent-runtime \
+            --agent-runtime-id ${{ inputs.agent_runtime_id }} \
+            --agent-runtime-artifact containerConfiguration={containerUri="${{ steps.vars.outputs.image_uri_version }}"} \
+            --role-arn ${{vars.AGENT_ROLE_ARN}} \
+            --network-configuration '{"networkMode":"PUBLIC"}' \
+            --query 'agentRuntimeVersion' \
+            --output text)
+          
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Runtime updated to version: $NEW_VERSION"
+          
+          # Wait for runtime to be active
+          echo "Waiting for runtime to be active..."
+          for i in {1..30}; do
+            STATUS=$(aws bedrock-agentcore-control get-agent-runtime \
+              --agent-runtime-id ${{ inputs.agent_runtime_id }} \
+              --query 'status' \
+              --output text)
+            
+            if [ "$STATUS" == "READY" ]; then
+              echo "Runtime is ready!"
+              break
+            fi
+            echo "Waiting for runtime to be ready... ($i/30)"
+            sleep 10
+          done
+
+      - name: Update endpoint to latest version
+        id: update-endpoint
+        run: |
+          ENDPOINT_NAME="${{ inputs.environment }}"
+          echo "Updating $ALIAS_NAME endpoint to latest version..."
+          
+          # Update alias to point to new version
+          aws bedrock-agentcore-control update-agent-runtime-endpoint \
+            --agent-runtime-id ${{ inputs.agent_runtime_id }} \
+            --endpoint-name "$ENDPOINT_NAME" \
+            --agent-runtime-version ${{ steps.update-runtime.outputs.new_version }}
+          
+          echo "$ENDPOINT_NAME endpoint updated to version: ${{ steps.update-runtime.outputs.new_version }}"
