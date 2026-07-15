@@ -30,9 +30,6 @@ jobs:
   deploy:
     name: Deploy to Agencore
     runs-on: ubuntu-24.04-arm
-    permissions:
-      id-token: write
-      contents: read
 
     steps:
       - name: Checkout code
