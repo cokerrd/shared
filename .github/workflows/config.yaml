@@ -137,5 +137,22 @@ jobs:
             --agent-runtime-id ${{ inputs.agent_runtime_id }} \
             --endpoint-name "$ENDPOINT_NAME" \
             --agent-runtime-version ${{ steps.update-runtime.outputs.new_version }}
+
+          # Wait for endpoint to be ready
+          echo "Waiting for runtime to be ready..."
+          for i in {1..30}; do
+            STATUS=$(aws bedrock-agentcore-control get-agent-runtime-endpoint \
+              --agent-runtime-id ${{ inputs.agent_runtime_id }} \
+              --endpoint-name "$ENDPOINT_NAME" \
+              --query 'status' \
+              --output text)
+            
+            if [ "$STATUS" == "READY" ]; then
+              echo "Endpoint is ready!"
+              break
+            fi
+            echo "Waiting for runtime to be ready... ($i/30)"
+            sleep 10
+          done
           
           echo "$ENDPOINT_NAME endpoint updated to version: ${{ steps.update-runtime.outputs.new_version }}"
