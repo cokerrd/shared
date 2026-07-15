@@ -84,7 +84,7 @@ jobs:
           echo "Image built successfully"
 
       - name: Push Docker image to ECR
-        if: github.event.pull_request.merged == true &&  github.event.pull_request.base.ref == 'develop'
+        # i f: github.event.pull_request.merged == true &&  github.event.pull_request.base.ref == 'develop'
         id: push
         run: |
           echo "Pushing version tag: ${{ steps.vars.outputs.env_tag }}"
@@ -93,7 +93,7 @@ jobs:
 
       - name: Update Agencore Runtime with new image
         id: update-runtime
-        if: github.event.pull_request.merged == true &&  github.event.pull_request.base.ref == 'main'
+        # i f: github.event.pull_request.merged == true &&  github.event.pull_request.base.ref == 'main'
         run: |
           echo "Updating Agencore Runtime with new image..."
           
@@ -125,7 +125,7 @@ jobs:
           done
 
       - name: Update endpoint to latest version
-        if: github.event.pull_request.merged == true &&  github.event.pull_request.base.ref == 'main'
+        # i f: github.event.pull_request.merged == true &&  github.event.pull_request.base.ref == 'main'
         id: update-endpoint
         run: |
           ENDPOINT_NAME="${{ inputs.environment }}"
